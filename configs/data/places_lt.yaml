@@ -1,2 +1,2 @@
 dataset: "Places_LT"
-root: "Path/To/Dataset"
+root: "/datasets/Places365/places365_standard/"

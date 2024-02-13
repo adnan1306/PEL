@@ -1,0 +1,66 @@
+** Config **
+adapter: False
+adapter_dim: None
+adaptformer: True
+backbone: CLIP-ViT-B/16
+batch_size: 128
+bias_tuning: False
+bn_tuning: False
+classifier: CosineClassifier
+dataset: Places_LT
+deterministic: True
+expand: 24
+full_tuning: False
+gpu: 0
+imb_factor: None
+init_head: text_feat
+ln_tuning: False
+lora: False
+loss_type: LA
+lr: 0.01
+micro_batch_size: 128
+model_dir: None
+momentum: 0.9
+num_epochs: 10
+num_workers: 8
+output_dir: ./output/places_lt_clip_vit_b16_peft
+partial: None
+prec: amp
+print_freq: 10
+resolution: 224
+root: /datasets/Places365/places365_standard/
+scale: 25
+seed: 0
+ssf_attn: False
+ssf_ln: False
+ssf_mlp: False
+test_ensemble: True
+test_only: False
+test_train: False
+vpt_deep: False
+vpt_len: None
+vpt_shallow: False
+weight_decay: 0.0005
+zero_shot: False
+************
+Setting fixed seed: 0
+mean: [0.48145466, 0.4578275, 0.40821073]
+std: [0.26862954, 0.26130258, 0.27577711]
+Total training points: 62500
+Building model
+Loading CLIP (backbone: CLIP-ViT-B/16)
+Adapter bottle dimension set to 1
+Turning off gradients in the model
+Turning on gradients in the tuner
+Turning on gradients in the head
+Total params: 149701400
+Tuned params: 46104
+Head params: 34560
+Initialize head with text features
+Initialize tensorboard (log_dir=./output/places_lt_clip_vit_b16_peft/tensorboard)
+epoch [1/10] batch [10/489] time 0.451 (0.705) data 0.001 (0.159) loss 2.2206 (2.4202) acc 41.4062 (29.3828) (mean 31.7691 many 34.9897 med 0.0000 few 33.3333) lr 1.0000e-02 eta 0:57:19
+epoch [1/10] batch [20/489] time 0.428 (0.572) data 0.000 (0.080) loss 1.7016 (2.0130) acc 56.2500 (44.8199) (mean 36.8684 many 41.2915 med 0.0000 few 30.0000) lr 1.0000e-02 eta 0:46:25
+epoch [1/10] batch [30/489] time 0.449 (0.524) data 0.000 (0.053) loss 1.6419 (1.7410) acc 49.2188 (49.2112) (mean 38.8738 many 43.4031 med 2.5000 few 30.0000) lr 1.0000e-02 eta 0:42:25
+epoch [1/10] batch [40/489] time 0.432 (0.501) data 0.000 (0.040) loss 1.5809 (1.5745) acc 48.4375 (50.7601) (mean 41.0590 many 46.0172 med 2.2500 few 30.0000) lr 1.0000e-02 eta 0:40:30
+epoch [1/10] batch [50/489] time 0.432 (0.487) data 0.001 (0.032) loss 1.3430 (1.4799) acc 53.1250 (50.6721) (mean 41.6710 many 46.8234 med 1.4762 few 30.0000) lr 1.0000e-02 eta 0:39:16
+epoch [1/10] batch [60/489] time 0.427 (0.477) data 0.001 (0.027) loss 1.3484 (1.3880) acc 58.5938 (54.5783) (mean 45.4952 many 51.1811 med 3.1012 few 30.0000) lr 1.0000e-02 eta 0:38:22

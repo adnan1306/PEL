@@ -26,6 +26,13 @@ from utils.losses import *
 from utils.evaluator import Evaluator
 
 
+
+#### added functions
+
+
+#######
+
+
 def load_clip_to_cpu(cfg):
     backbone_name = cfg.backbone.lstrip("CLIP-")
     url = clip._MODELS[backbone_name]
@@ -74,10 +81,125 @@ class Trainer:
             self.device = torch.device("cuda:{}".format(cfg.gpu))
 
         self.cfg = cfg
-        self.build_data_loader()
+        #self.build_data_loader()
+        self.build_course_dataloader()
         self.build_model()
         self.evaluator = Evaluator(cfg, self.many_idxs, self.med_idxs, self.few_idxs)
         self._writer = None
+
+
+
+##### 
+
+    def build_course_dataloader(self):
+        ### dataloader function to load the coarse dataset
+        cfg = self.cfg
+        root = cfg.root
+        resolution = cfg.resolution
+        expand = cfg.expand
+
+
+        if cfg.backbone.startswith("CLIP"):
+            mean = [0.48145466, 0.4578275, 0.40821073]
+            std = [0.26862954, 0.26130258, 0.27577711]
+        else:
+            mean = [0.5, 0.5, 0.5]
+            std = [0.5, 0.5, 0.5]
+        print("mean:", mean)
+        print("std:", std)
+
+        transform_train = transforms.Compose([
+            transforms.RandomResizedCrop(resolution),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ])
+
+        transform_plain = transforms.Compose([
+            transforms.Resize(resolution),
+            transforms.CenterCrop(resolution),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ])
+
+        if cfg.test_ensemble:
+            transform_test = transforms.Compose([
+                transforms.Resize(resolution + expand),
+                transforms.FiveCrop(resolution),
+                transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
+                transforms.Normalize(mean, std),
+            ])
+        else:
+            transform_test = transforms.Compose([
+                transforms.Resize(resolution * 8 // 7),
+                transforms.CenterCrop(resolution),
+                transforms.Lambda(lambda crop: torch.stack([transforms.ToTensor()(crop)])),
+                transforms.Normalize(mean, std),
+            ])
+
+
+        train_dataset = datasets.Places_LT_coarse(root, train=True, transform=transform_train)
+        train_init_dataset = datasets.Places_LT_coarse(root, train=True, transform=transform_plain)
+        train_test_dataset = datasets.Places_LT_coarse(root, train=True, transform=transform_test)
+        test_dataset = datasets.Places_LT_coarse(root, train=False, transform=transform_test)
+
+
+        # train_dataset = getattr(datasets, cfg.dataset)(root, train=True, transform=transform_train)
+        # train_init_dataset = getattr(datasets, cfg.dataset)(root, train=True, transform=transform_plain)
+        # train_test_dataset = getattr(datasets, cfg.dataset)(root, train=True, transform=transform_test)
+        # test_dataset = getattr(datasets, cfg.dataset)(root, train=False, transform=transform_test)
+
+        self.num_classes = train_dataset.num_classes
+        self.cls_num_list = train_dataset.cls_num_list
+        self.classnames = train_dataset.classnames
+
+
+        self.num_classes = train_dataset.num_classes
+        self.cls_num_list = train_dataset.cls_num_list
+        self.classnames = train_dataset.classnames
+
+        if cfg.dataset in ["CIFAR100", "CIFAR100_IR10", "CIFAR100_IR50"]:
+            split_cls_num_list = datasets.CIFAR100_IR100(root, train=True).cls_num_list
+        else:
+            split_cls_num_list = self.cls_num_list
+        self.many_idxs = (np.array(split_cls_num_list) > 100).nonzero()[0]
+        self.med_idxs = ((np.array(split_cls_num_list) >= 20) & (np.array(split_cls_num_list) <= 100)).nonzero()[0]
+        self.few_idxs = (np.array(split_cls_num_list) < 20).nonzero()[0]
+
+        if cfg.init_head == "1_shot":
+            init_sampler = DownSampler(train_init_dataset, n_max=1)
+        elif cfg.init_head == "10_shot":
+            init_sampler = DownSampler(train_init_dataset, n_max=10)
+        elif cfg.init_head == "100_shot":
+            init_sampler = DownSampler(train_init_dataset, n_max=100)
+        else:
+            init_sampler = None
+
+        self.train_loader = DataLoader(train_dataset,
+            batch_size=cfg.micro_batch_size, shuffle=True,
+            num_workers=cfg.num_workers, pin_memory=True)
+
+        self.train_init_loader = DataLoader(train_init_dataset,
+            batch_size=64, sampler=init_sampler, shuffle=False,
+            num_workers=cfg.num_workers, pin_memory=True)
+
+        self.train_test_loader = DataLoader(train_test_dataset,
+            batch_size=64, shuffle=False,
+            num_workers=cfg.num_workers, pin_memory=True)
+
+        self.test_loader = DataLoader(test_dataset,
+            batch_size=64, shuffle=False,
+            num_workers=cfg.num_workers, pin_memory=True)
+        
+        assert cfg.batch_size % cfg.micro_batch_size == 0
+        self.accum_step = cfg.batch_size // cfg.micro_batch_size
+
+        print("Total training points:", sum(self.cls_num_list))
+        print(self.num_classes)
+        # print(self.cls_num_list)
+
+
+    
 
     def build_data_loader(self):
         cfg = self.cfg
@@ -385,7 +507,7 @@ class Trainer:
         # Remember the starting time (for computing the elapsed time)
         time_start = time.time()
 
-        num_epochs = cfg.num_epochs
+        num_epochs = 1 #cfg.num_epochs
         for epoch_idx in range(num_epochs):
             self.tuner.train()
             end = time.time()
@@ -476,7 +598,7 @@ class Trainer:
             self.sched.step()
             torch.cuda.empty_cache()
 
-        print("Finish training")
+        print("Finish training on the coarse dataset")
         print("Note that the printed training acc is not precise.",
               "To get precise training acc, use option ``test_train True``.")
 
@@ -484,6 +606,104 @@ class Trainer:
         elapsed = round(time.time() - time_start)
         elapsed = str(datetime.timedelta(seconds=elapsed))
         print(f"Time elapsed: {elapsed}")
+
+
+        self.build_data_loader()
+        print("No of classes in round 2: {}".format(self.num_classes))
+        self.model.head = eval(cfg.classifier)(feat_dim, num_classes, dtype, **cfg)
+        self.build_optimizer()
+
+        for epoch_idx in range(num_epochs):
+            self.tuner.train()
+            end = time.time()
+
+            num_batches = len(self.train_loader)
+            for batch_idx, batch in enumerate(self.train_loader):
+                data_time.update(time.time() - end)
+
+                image = batch[0]
+                label = batch[1]
+                image = image.to(self.device)
+                label = label.to(self.device)
+
+                if cfg.prec == "amp":
+                    with autocast():
+                        output = self.model(image)
+                        loss = self.criterion(output, label)
+                        loss_micro = loss / self.accum_step
+                        self.scaler.scale(loss_micro).backward()
+                    if ((batch_idx + 1) % self.accum_step == 0) or (batch_idx + 1 == num_batches):
+                        self.scaler.step(self.optim)
+                        self.scaler.update()
+                        self.optim.zero_grad()
+                else:
+                    output = self.model(image)
+                    loss = self.criterion(output, label)
+                    loss_micro = loss / self.accum_step
+                    loss_micro.backward()
+                    if ((batch_idx + 1) % self.accum_step == 0) or (batch_idx + 1 == num_batches):
+                        self.optim.step()
+                        self.optim.zero_grad()
+
+                with torch.no_grad():
+                    pred = output.argmax(dim=1)
+                    correct = pred.eq(label).float()
+                    acc = correct.mean().mul_(100.0)
+
+                current_lr = self.optim.param_groups[0]["lr"]
+                loss_meter.update(loss.item())
+                acc_meter.update(acc.item())
+                batch_time.update(time.time() - end)
+
+                for _c, _y in zip(correct, label):
+                    cls_meters[_y].update(_c.mul_(100.0).item(), n=1)
+                cls_accs = [cls_meters[i].avg for i in range(self.num_classes)]
+
+                mean_acc = np.mean(np.array(cls_accs))
+                many_acc = np.mean(np.array(cls_accs)[self.many_idxs])
+                med_acc = np.mean(np.array(cls_accs)[self.med_idxs])
+                few_acc = np.mean(np.array(cls_accs)[self.few_idxs])
+
+                meet_freq = (batch_idx + 1) % cfg.print_freq == 0
+                only_few_batches = num_batches < cfg.print_freq
+                if meet_freq or only_few_batches:
+                    nb_remain = 0
+                    nb_remain += num_batches - batch_idx - 1
+                    nb_remain += (
+                        num_epochs - epoch_idx - 1
+                    ) * num_batches
+                    eta_seconds = batch_time.avg * nb_remain
+                    eta = str(datetime.timedelta(seconds=int(eta_seconds)))
+
+                    info = []
+                    info += [f"epoch [{epoch_idx + 1}/{num_epochs}]"]
+                    info += [f"batch [{batch_idx + 1}/{num_batches}]"]
+                    info += [f"time {batch_time.val:.3f} ({batch_time.avg:.3f})"]
+                    info += [f"data {data_time.val:.3f} ({data_time.avg:.3f})"]
+                    info += [f"loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})"]
+                    info += [f"acc {acc_meter.val:.4f} ({acc_meter.avg:.4f})"]
+                    info += [f"(mean {mean_acc:.4f} many {many_acc:.4f} med {med_acc:.4f} few {few_acc:.4f})"]
+                    info += [f"lr {current_lr:.4e}"]
+                    info += [f"eta {eta}"]
+                    print(" ".join(info))
+
+                n_iter = epoch_idx * num_batches + batch_idx
+                self._writer.add_scalar("train/lr", current_lr, n_iter)
+                self._writer.add_scalar("train/loss.val", loss_meter.val, n_iter)
+                self._writer.add_scalar("train/loss.avg", loss_meter.avg, n_iter)
+                self._writer.add_scalar("train/acc.val", acc_meter.val, n_iter)
+                self._writer.add_scalar("train/acc.avg", acc_meter.avg, n_iter)
+                self._writer.add_scalar("train/mean_acc", mean_acc, n_iter)
+                self._writer.add_scalar("train/many_acc", many_acc, n_iter)
+                self._writer.add_scalar("train/med_acc", med_acc, n_iter)
+                self._writer.add_scalar("train/few_acc", few_acc, n_iter)
+                
+                end = time.time()
+
+            self.sched.step()
+            torch.cuda.empty_cache()
+
+
 
         # save model
         self.save_model(cfg.output_dir)
