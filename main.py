@@ -82,5 +82,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", "-m", type=str, default="", help="model config file")
     parser.add_argument("opts", default=None, nargs=argparse.REMAINDER,
                         help="modify config options using the command-line")
+
+    parser.add_argument('-seed', "-s", type=int)
     args = parser.parse_args()
     main(args)

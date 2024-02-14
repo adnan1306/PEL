@@ -778,7 +778,8 @@ class Trainer:
         results = self.evaluator.evaluate()
         wandb.log({'many': results["many_acc"],
                 'med': results["med_acc"],
-                'few': results["few_acc"]})
+                'few': results["few_acc"],
+                'acc': results["accuracy"]})
 
         for k, v in results.items():
             tag = f"test/{k}"
