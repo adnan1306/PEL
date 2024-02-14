@@ -28,9 +28,17 @@ from utils.evaluator import Evaluator
 
 
 #### added functions
-
-
+import wandb
+wandb.login()
+wandb.init(
+      # Set the project where this run will be logged
+      project="places365lt_vit", 
+      # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
+      name="PEL", 
+      # Track hyperparameters and run metadata
+  )
 #######
+
 
 
 def load_clip_to_cpu(cfg):
@@ -507,7 +515,7 @@ class Trainer:
         # Remember the starting time (for computing the elapsed time)
         time_start = time.time()
 
-        num_epochs = 1 #cfg.num_epochs
+        num_epochs = cfg.num_epochs
         for epoch_idx in range(num_epochs):
             self.tuner.train()
             end = time.time()
@@ -607,13 +615,35 @@ class Trainer:
         elapsed = str(datetime.timedelta(seconds=elapsed))
         print(f"Time elapsed: {elapsed}")
 
-
+        ######### added code
         self.build_data_loader()
-        print("No of classes in round 2: {}".format(self.num_classes))
-        self.model.head = eval(cfg.classifier)(feat_dim, num_classes, dtype, **cfg)
-        self.build_optimizer()
+        self.evaluator = Evaluator(cfg, self.many_idxs, self.med_idxs, self.few_idxs)
 
-        for epoch_idx in range(num_epochs):
+        print("No of classes in round 2: {}".format(self.num_classes))
+        old_head = self.model.head
+        self.model.head = eval(cfg.classifier)(self.model.feat_dim, self.num_classes, self.model.dtype, **cfg).cuda()
+        self.head = self.model.head
+
+        
+        ## transfer the previous head to the new one
+        with torch.no_grad():
+            self.init_head_text_feat()
+
+            map = np.load('datasets/Places_LT/reduced_map.npy')
+            for i in range(365):
+                self.model.head.weight[i,:] = 0.2*old_head.weight[map[i],:] + 0.8*self.model.head.weight[i,:]
+
+        print(self.model.head.weight.shape)
+
+        self.build_criterion()
+        self.build_optimizer()
+        self.optim.lr = self.cfg.lr *0.1
+
+        cls_meters = [AverageMeter(ema=True) for _ in range(self.num_classes)]
+
+        ####################
+
+        for epoch_idx in range(2*num_epochs):
             self.tuner.train()
             end = time.time()
 
@@ -701,6 +731,8 @@ class Trainer:
                 end = time.time()
 
             self.sched.step()
+            self.test()
+
             torch.cuda.empty_cache()
 
 
@@ -708,7 +740,7 @@ class Trainer:
         # save model
         self.save_model(cfg.output_dir)
 
-        self.test()
+        # self.test()
 
         # Close writer
         self._writer.close()
@@ -744,6 +776,9 @@ class Trainer:
             self.evaluator.process(output, label)
 
         results = self.evaluator.evaluate()
+        wandb.log({'many': results["many_acc"],
+                'med': results["med_acc"],
+                'few': results["few_acc"]})
 
         for k, v in results.items():
             tag = f"test/{k}"

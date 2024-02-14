@@ -54,10 +54,9 @@ class PeftModelFromCLIP(nn.Module):
             self.image_encoder = Peft_RN(clip_model.visual)
             self.tuner = RN_Tuner(cfg, clip_model.visual, num_classes)
         
-        feat_dim = self.image_encoder.out_dim
-        dtype = self.image_encoder.dtype
-        self.head = eval(cfg.classifier)(feat_dim, num_classes, dtype, **cfg)
-
+        self.feat_dim = self.image_encoder.out_dim
+        self.dtype = self.image_encoder.dtype
+        self.head = eval(cfg.classifier)(self.feat_dim, num_classes, self.dtype, **cfg)
     def encode_text(self, text):
         try:
             text_features = self.text_encoder(text)
