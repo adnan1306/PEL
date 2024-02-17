@@ -34,7 +34,7 @@ def main(args):
     print("************")
     
     if cfg.seed is not None:
-        seed = cfg.seed
+        seed =args.seed
         print("Setting fixed seed: {}".format(seed))
         random.seed(seed)
         np.random.seed(seed)
